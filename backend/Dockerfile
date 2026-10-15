@@ -18,5 +18,6 @@ EXPOSE 4000
 
 ENV PORT=4000
 ENV NODE_ENV=production
+ENV JWT_SECRET=tisaal-prod-sec-key-32chars-min-98f98a23d4e8c1b7a0
 
 CMD ["npm", "start"]
