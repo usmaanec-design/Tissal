@@ -1,0 +1,9 @@
+node_modules/
+dist/
+*.sqlite
+*.sqlite3
+*.db
+tisaal.sqlite
+.env
+.env.local
+npm-debug.log*
