@@ -1,5 +1,7 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
+import '../core/models/models.dart';
+import '../core/services/api_service.dart';
 import '../core/services/notification_service.dart';
 import '../core/services/ringtone_service.dart';
 import '../core/services/webrtc_service.dart';
@@ -27,6 +29,10 @@ class CallProvider extends ChangeNotifier {
   Timer? _durationTimer;
   StreamSubscription? _callEventSubscription;
   StreamSubscription? _remoteStreamSubscription;
+  String? _errorMessage;
+
+  List<CallLogModel> _callLogs = [];
+  bool _isLoadingLogs = false;
 
   CallState get state => _state;
   String? get peerAccountId => _peerAccountId;
@@ -36,8 +42,13 @@ class CallProvider extends ChangeNotifier {
   bool get isVideoOff => _isVideoOff;
   bool get hasRemoteVideo => _hasRemoteVideo;
   int get callDurationSeconds => _callDurationSeconds;
+  String? get errorMessage => _errorMessage;
+
+  List<CallLogModel> get callLogs => _callLogs;
+  bool get isLoadingLogs => _isLoadingLogs;
 
   void init() {
+    loadCallLogs();
     _callEventSubscription?.cancel();
     _callEventSubscription = WebSocketService().onCallEvent.listen((event) {
       _handleCallEvent(event);
@@ -144,9 +155,6 @@ class CallProvider extends ChangeNotifier {
     }
   }
 
-  String? _errorMessage;
-  String? get errorMessage => _errorMessage;
-
   Future<void> startOutgoingCall({
     required String targetAccountId,
     required String targetUsername,
@@ -227,6 +235,12 @@ class CallProvider extends ChangeNotifier {
   }
 
   void _endCallLocally() {
+    final endedPeerId = _peerAccountId;
+    final endedPeerUsername = _peerUsername;
+    final endedType = _callType;
+    final endedDuration = _callDurationSeconds;
+    final endedIsCaller = _state == CallState.outgoingRinging || _state == CallState.connected;
+
     RingtoneService.stop();
     NotificationService.cancelCallNotification();
     _durationTimer?.cancel();
@@ -236,12 +250,53 @@ class CallProvider extends ChangeNotifier {
     _state = CallState.ended;
     notifyListeners();
 
+    // Record in local call logs immediately
+    if (endedPeerId != null && endedPeerUsername != null) {
+      _callLogs.insert(
+        0,
+        CallLogModel(
+          id: DateTime.now().millisecondsSinceEpoch.toString(),
+          callerAccountId: endedIsCaller ? 'me' : endedPeerId,
+          calleeAccountId: endedIsCaller ? endedPeerId : 'me',
+          peerAccountId: endedPeerId,
+          peerUsername: endedPeerUsername,
+          peerDisplayName: endedPeerUsername,
+          callType: endedType,
+          status: endedDuration > 0 ? 'completed' : 'missed',
+          durationSeconds: endedDuration,
+          isCaller: endedIsCaller,
+          createdAt: DateTime.now(),
+        ),
+      );
+    }
+
     Future.delayed(const Duration(milliseconds: 1500), () {
       _state = CallState.idle;
       _peerAccountId = null;
       _peerUsername = null;
       notifyListeners();
     });
+  }
+
+  Future<void> loadCallLogs() async {
+    _isLoadingLogs = true;
+    notifyListeners();
+    try {
+      final remote = await ApiService.getCallLogs();
+      if (remote.isNotEmpty) {
+        _callLogs = remote;
+      }
+    } catch (_) {}
+    _isLoadingLogs = false;
+    notifyListeners();
+  }
+
+  Future<void> clearCallLogs() async {
+    _callLogs.clear();
+    notifyListeners();
+    try {
+      await ApiService.clearCallLogs();
+    } catch (_) {}
   }
 
   void _startTimer() {
@@ -261,3 +316,4 @@ class CallProvider extends ChangeNotifier {
     super.dispose();
   }
 }
+

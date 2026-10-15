@@ -143,11 +143,19 @@ class ChatProvider extends ChangeNotifier {
     });
 
     // 5. Contact Update stream
-    _contactSubscription = WebSocketService().onContactUpdate.listen((_) {
+    _contactSubscription = WebSocketService().onContactUpdate.listen((event) {
       loadContacts(silent: true);
+      final sender = event['senderUsername'] as String? ?? 'Someone';
+      if (event['action'] == 'received') {
+        NotificationService.showContactRequestNotification(
+          senderUsername: sender,
+        );
+      }
       NotificationService.showInApp(
-        title: 'Contact Update',
-        message: 'A contact request or status update was received.',
+        title: 'Connection Update',
+        message: event['action'] == 'received'
+            ? '@$sender sent you a connection request!'
+            : 'A contact request or status update was received.',
         icon: Icons.person_add_rounded,
       );
     });

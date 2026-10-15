@@ -135,6 +135,45 @@ class NotificationService {
     }
   }
 
+  /// Show system notification for a new contact request
+  static Future<void> showContactRequestNotification({
+    required String senderUsername,
+  }) async {
+    if (kIsWeb) return;
+    await init();
+
+    try {
+      const androidDetails = AndroidNotificationDetails(
+        'tisaal_contacts_channel',
+        'Contact Requests',
+        channelDescription: 'Notifications for new friend and contact requests',
+        importance: Importance.high,
+        priority: Priority.high,
+        enableVibration: true,
+        playSound: true,
+      );
+
+      const notificationDetails = NotificationDetails(
+        android: androidDetails,
+        iOS: DarwinNotificationDetails(
+          presentAlert: true,
+          presentBadge: true,
+          presentSound: true,
+        ),
+      );
+
+      final notificationId = DateTime.now().millisecondsSinceEpoch ~/ 1000;
+      await _localNotifications.show(
+        id: notificationId,
+        title: 'New Connection Request',
+        body: '@$senderUsername sent you a connection request on Tisaal',
+        notificationDetails: notificationDetails,
+      );
+    } catch (e) {
+      debugPrint('[NotificationService] Contact request notification error: $e');
+    }
+  }
+
   /// In-app floating pill banner when app is actively in foreground
   static void showInApp({
     required String title,

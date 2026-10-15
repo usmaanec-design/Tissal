@@ -128,6 +128,64 @@ async function handleSocketMessage(
         broadcastPresence(activeClients, decoded.accountId, true);
         send(ws, { type: 'auth:success', accountId: decoded.accountId, username: decoded.username });
         send(ws, { type: 'presence:init', onlineAccountIds: Array.from(activeClients.keys()) });
+
+        // Immediate offline messages & pending contacts sync
+        try {
+          const db = await getDb();
+          const undelivered = await db.all(
+            `SELECT id, conversation_id, sender_account_id, receiver_account_id, content, ephemeral_public_key, nonce, ciphertext, auth_tag, message_type, created_at
+             FROM messages
+             WHERE receiver_account_id = ? AND is_delivered = 0
+             ORDER BY created_at ASC`,
+            [decoded.accountId]
+          );
+
+          if (undelivered && undelivered.length > 0) {
+            console.log(`[Signaling] Delivering ${undelivered.length} offline queued messages to ${decoded.username}`);
+            for (const m of undelivered) {
+              send(ws, {
+                type: 'chat:received',
+                id: m.id,
+                conversationId: m.conversation_id,
+                senderAccountId: m.sender_account_id,
+                receiverAccountId: m.receiver_account_id,
+                ephemeralPublicKey: m.ephemeral_public_key,
+                nonce: m.nonce,
+                ciphertext: m.ciphertext,
+                authTag: m.auth_tag,
+                messageType: m.message_type || 'text',
+                isDelivered: true,
+                isRead: false,
+                createdAt: m.created_at
+              });
+            }
+            await db.run(
+              `UPDATE messages SET is_delivered = 1 WHERE receiver_account_id = ? AND is_delivered = 0`,
+              [decoded.accountId]
+            );
+          }
+
+          // Check pending contact requests
+          const pending = await db.all(
+            `SELECT c.id, u.username, u.display_name 
+             FROM contacts c 
+             JOIN users u ON u.account_id = c.sender_account_id
+             WHERE c.receiver_account_id = ? AND c.status = 'pending'`,
+            [decoded.accountId]
+          );
+          if (pending && pending.length > 0) {
+            for (const p of pending) {
+              send(ws, {
+                type: 'contact:updated',
+                action: 'received',
+                contactId: p.id,
+                senderUsername: p.username
+              });
+            }
+          }
+        } catch (err) {
+          console.error('[Signaling] Failed to sync offline items:', err);
+        }
         return;
       } else {
         send(ws, { type: 'auth:error', message: 'Invalid or expired authentication token' });
@@ -281,12 +339,21 @@ async function handleSocketMessage(
       const callType = msg.callType === 'video' ? 'video' : 'audio';
       if (!targetAccountId) return;
 
+      const db = await getDb();
+      const callLogId = uuidv4();
+
       if (!targetClient) {
+        try {
+          await db.run(
+            `INSERT INTO call_logs (id, caller_account_id, callee_account_id, call_type, status, duration_seconds)
+             VALUES (?, ?, ?, ?, 'missed', 0)`,
+            [callLogId, senderAccountId, targetAccountId, callType]
+          );
+        } catch (_) {}
         send(ws, { type: 'call:failed', targetAccountId, reason: 'user_offline' });
         return;
       }
 
-      const db = await getDb();
       const isBlocked = await db.get(
         `SELECT id FROM contacts WHERE sender_account_id = ? AND receiver_account_id = ? AND status = 'blocked'`,
         [targetAccountId, senderAccountId]
@@ -296,8 +363,17 @@ async function handleSocketMessage(
         return;
       }
 
+      try {
+        await db.run(
+          `INSERT INTO call_logs (id, caller_account_id, callee_account_id, call_type, status, duration_seconds)
+           VALUES (?, ?, ?, ?, 'ringing', 0)`,
+          [callLogId, senderAccountId, targetAccountId, callType]
+        );
+      } catch (_) {}
+
       send(targetClient, {
         type: 'call:incoming',
+        callId: callLogId,
         callerAccountId: senderAccountId,
         callerUsername: ws.username,
         callType
@@ -316,6 +392,14 @@ async function handleSocketMessage(
           calleeUsername: ws.username
         });
       }
+      try {
+        const db = await getDb();
+        await db.run(
+          `UPDATE call_logs SET status = 'accepted' 
+           WHERE caller_account_id = ? AND callee_account_id = ? AND status = 'ringing'`,
+          [callerAccountId, senderAccountId]
+        );
+      } catch (_) {}
       break;
     }
 
@@ -330,6 +414,14 @@ async function handleSocketMessage(
           reason: msg.reason || 'declined'
         });
       }
+      try {
+        const db = await getDb();
+        await db.run(
+          `UPDATE call_logs SET status = 'declined' 
+           WHERE caller_account_id = ? AND callee_account_id = ? AND status = 'ringing'`,
+          [callerAccountId, senderAccountId]
+        );
+      } catch (_) {}
       break;
     }
 
@@ -341,6 +433,14 @@ async function handleSocketMessage(
           callerAccountId: senderAccountId
         });
       }
+      try {
+        const db = await getDb();
+        await db.run(
+          `UPDATE call_logs SET status = 'missed' 
+           WHERE caller_account_id = ? AND callee_account_id = ? AND status = 'ringing'`,
+          [senderAccountId, targetAccountId]
+        );
+      } catch (_) {}
       break;
     }
 
@@ -388,6 +488,17 @@ async function handleSocketMessage(
           senderAccountId
         });
       }
+      try {
+        const duration = typeof msg.duration === 'number' ? msg.duration : 0;
+        const db = await getDb();
+        await db.run(
+          `UPDATE call_logs 
+           SET status = 'completed', duration_seconds = ? 
+           WHERE ((caller_account_id = ? AND callee_account_id = ?) OR (caller_account_id = ? AND callee_account_id = ?))
+             AND status IN ('ringing', 'accepted')`,
+          [duration, senderAccountId, targetAccountId, targetAccountId, senderAccountId]
+        );
+      } catch (_) {}
       break;
     }
 

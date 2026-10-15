@@ -320,4 +320,31 @@ class ApiService {
       return false;
     }
   }
+
+  /// Fetch user call logs
+  static Future<List<CallLogModel>> getCallLogs() async {
+    try {
+      final res = await http.get(
+        Uri.parse('$baseUrl/users/calls'),
+        headers: _headers(),
+      );
+      if (res.statusCode == 200) {
+        final data = jsonDecode(res.body);
+        final list = data['calls'] as List;
+        return list.map((item) => CallLogModel.fromJson(item)).toList();
+      }
+    } catch (_) {}
+    return [];
+  }
+
+  /// Clear user call logs
+  static Future<void> clearCallLogs() async {
+    try {
+      await http.delete(
+        Uri.parse('$baseUrl/users/calls'),
+        headers: _headers(),
+      );
+    } catch (_) {}
+  }
 }
+

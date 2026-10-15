@@ -164,3 +164,68 @@ class ChatMessageModel {
     'createdAt': createdAt.toIso8601String(),
   };
 }
+
+class CallLogModel {
+  final String id;
+  final String callerAccountId;
+  final String calleeAccountId;
+  final String peerAccountId;
+  final String peerUsername;
+  final String peerDisplayName;
+  final String callType; // 'audio' | 'video'
+  final String status; // 'completed' | 'missed' | 'declined' | 'ringing' | 'accepted'
+  final int durationSeconds;
+  final bool isCaller;
+  final DateTime createdAt;
+
+  CallLogModel({
+    required this.id,
+    required this.callerAccountId,
+    required this.calleeAccountId,
+    required this.peerAccountId,
+    required this.peerUsername,
+    required this.peerDisplayName,
+    this.callType = 'audio',
+    this.status = 'completed',
+    this.durationSeconds = 0,
+    required this.isCaller,
+    required this.createdAt,
+  });
+
+  factory CallLogModel.fromJson(Map<String, dynamic> json) {
+    final callerId = (json['caller_account_id'] ?? json['callerAccountId'] ?? '') as String;
+    final calleeId = (json['callee_account_id'] ?? json['calleeAccountId'] ?? '') as String;
+    final isCaller = json['is_caller'] == 1 || json['is_caller'] == true || json['isCaller'] == true;
+    final peerId = (json['account_id'] ?? (isCaller ? calleeId : callerId)) as String;
+
+    return CallLogModel(
+      id: (json['id'] ?? '') as String,
+      callerAccountId: callerId,
+      calleeAccountId: calleeId,
+      peerAccountId: peerId,
+      peerUsername: (json['username'] ?? '') as String,
+      peerDisplayName: (json['display_name'] ?? json['displayName'] ?? json['username'] ?? '') as String,
+      callType: (json['call_type'] ?? json['callType'] ?? 'audio') as String,
+      status: (json['status'] ?? 'completed') as String,
+      durationSeconds: (json['duration_seconds'] ?? json['durationSeconds'] ?? 0) as int,
+      isCaller: isCaller,
+      createdAt: json['created_at'] != null || json['createdAt'] != null
+          ? DateTime.tryParse(json['created_at'] ?? json['createdAt']) ?? DateTime.now()
+          : DateTime.now(),
+    );
+  }
+
+  Map<String, dynamic> toJson() => {
+    'id': id,
+    'callerAccountId': callerAccountId,
+    'calleeAccountId': calleeAccountId,
+    'peerAccountId': peerAccountId,
+    'peerUsername': peerUsername,
+    'peerDisplayName': peerDisplayName,
+    'callType': callType,
+    'status': status,
+    'durationSeconds': durationSeconds,
+    'isCaller': isCaller,
+    'createdAt': createdAt.toIso8601String(),
+  };
+}

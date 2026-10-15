@@ -32,24 +32,34 @@ export function requireAuth(req: AuthenticatedRequest, res: Response, next: Next
   next();
 }
 
-// Search users by @username or accountId
+// Search users by @username, display_name or accountId (returns recent users if query is empty)
 usersRouter.get('/search', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
   const query = (req.query.q as string || '').trim().replace(/^@/, '');
-  if (!query) {
-    res.json({ results: [] });
-    return;
-  }
-
   const db = await getDb();
   const currentAccountId = req.user!.accountId;
+
+  if (!query) {
+    // Return recent active users for instant discovery without guessing
+    const recentUsers = await db.all(
+      `SELECT account_id, username, display_name, public_key, public_encryption_key, created_at 
+       FROM users 
+       WHERE account_id != ? 
+       ORDER BY created_at DESC 
+       LIMIT 30`,
+      [currentAccountId]
+    );
+    res.json({ results: recentUsers });
+    return;
+  }
 
   const users = await db.all(
     `SELECT account_id, username, display_name, public_key, public_encryption_key, created_at 
      FROM users 
-     WHERE (LOWER(username) LIKE LOWER(?) OR account_id = ?) 
+     WHERE (LOWER(username) LIKE LOWER(?) OR LOWER(display_name) LIKE LOWER(?) OR account_id = ?) 
        AND account_id != ?
-     LIMIT 20`,
-    [`%${query}%`, query, currentAccountId]
+     ORDER BY created_at DESC
+     LIMIT 30`,
+    [`%${query}%`, `%${query}%`, query, currentAccountId]
   );
 
   res.json({ results: users });
@@ -158,7 +168,13 @@ usersRouter.post('/contacts/request', requireAuth, async (req: AuthenticatedRequ
     [id, current, targetAccountId]
   );
 
-  notifyClient(targetAccountId, { type: 'contact:updated', action: 'received' });
+  notifyClient(targetAccountId, {
+    type: 'contact:updated',
+    action: 'received',
+    contactId: id,
+    senderAccountId: current,
+    senderUsername: req.user!.username
+  });
 
   res.status(201).json({ message: 'Contact request sent', contactId: id });
 });
@@ -316,3 +332,32 @@ usersRouter.post('/messages/read', requireAuth, async (req: AuthenticatedRequest
 
   res.json({ success: true });
 });
+
+// Get user call logs
+usersRouter.get('/calls', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const db = await getDb();
+  const current = req.user!.accountId;
+
+  const calls = await db.all(
+    `SELECT c.id, c.caller_account_id, c.callee_account_id, c.call_type, c.status, c.duration_seconds, c.created_at,
+            u.username, u.display_name, u.public_key, u.public_encryption_key,
+            (c.caller_account_id = ?) as is_caller
+     FROM call_logs c
+     JOIN users u ON (u.account_id = CASE WHEN c.caller_account_id = ? THEN c.callee_account_id ELSE c.caller_account_id END)
+     WHERE c.caller_account_id = ? OR c.callee_account_id = ?
+     ORDER BY c.created_at DESC
+     LIMIT 50`,
+    [current, current, current, current]
+  );
+
+  res.json({ calls });
+});
+
+// Clear call history
+usersRouter.delete('/calls', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const db = await getDb();
+  const current = req.user!.accountId;
+  await db.run('DELETE FROM call_logs WHERE caller_account_id = ? OR callee_account_id = ?', [current, current]);
+  res.json({ success: true });
+});
+

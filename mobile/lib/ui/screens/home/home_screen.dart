@@ -9,6 +9,7 @@ import '../../../providers/auth_provider.dart';
 import '../../../providers/call_provider.dart';
 import '../../../providers/chat_provider.dart';
 import '../../theme/app_theme.dart';
+import '../../widgets/server_config_dialog.dart';
 import '../call/call_screen.dart';
 import '../chat/chat_screen.dart';
 import '../onboarding/onboarding_screen.dart';
@@ -45,6 +46,7 @@ class _HomeScreenState extends State<HomeScreen> {
           chat.setMyAccountId(auth.currentUser!.accountId);
         }
         chat.initSubscriptions();
+        chat.searchUsers(''); // Load registered users immediately for instant discovery
       }
       context.read<CallProvider>().init();
     });
@@ -89,9 +91,48 @@ class _HomeScreenState extends State<HomeScreen> {
           if (_currentIndex == 0)
             IconButton(
               icon: const Icon(Icons.person_add_rounded),
-              onPressed: () => setState(() => _currentIndex = 1),
+              onPressed: () => setState(() => _currentIndex = 2),
               tooltip: 'Find Users',
             ),
+          if (_currentIndex == 1)
+            IconButton(
+              icon: const Icon(Icons.delete_sweep_rounded),
+              onPressed: () {
+                showDialog(
+                  context: context,
+                  builder: (ctx) => AlertDialog(
+                    title: const Text('Clear Call History'),
+                    content: const Text('Are you sure you want to delete all call logs?'),
+                    actions: [
+                      TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+                      ElevatedButton(
+                        style: ElevatedButton.styleFrom(backgroundColor: AppTheme.errorRed),
+                        onPressed: () {
+                          context.read<CallProvider>().clearCallLogs();
+                          Navigator.pop(ctx);
+                        },
+                        child: const Text('Clear All'),
+                      ),
+                    ],
+                  ),
+                );
+              },
+              tooltip: 'Clear History',
+            ),
+          if (_currentIndex == 2)
+            IconButton(
+              icon: const Icon(Icons.refresh_rounded),
+              onPressed: () => context.read<ChatProvider>().searchUsers(_searchController.text),
+              tooltip: 'Refresh Users',
+            ),
+          IconButton(
+            icon: const Icon(Icons.settings_outlined),
+            onPressed: () => showDialog(
+              context: context,
+              builder: (_) => const ServerConfigDialog(),
+            ),
+            tooltip: 'Server Settings',
+          ),
           const SizedBox(width: 8),
         ],
       ),
@@ -99,6 +140,7 @@ class _HomeScreenState extends State<HomeScreen> {
         index: _currentIndex,
         children: [
           _buildChatsTab(),
+          _buildCallsTab(),
           _buildDiscoveryTab(),
           _buildSettingsTab(),
         ],
@@ -113,6 +155,11 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.chat_bubble_outline_rounded),
             selectedIcon: Icon(Icons.chat_bubble_rounded, color: AppTheme.primaryLight),
             label: 'Chats',
+          ),
+          NavigationDestination(
+            icon: Icon(Icons.call_outlined),
+            selectedIcon: Icon(Icons.call_rounded, color: AppTheme.primaryLight),
+            label: 'Calls',
           ),
           NavigationDestination(
             icon: Icon(Icons.person_search_outlined),
@@ -136,9 +183,12 @@ class _HomeScreenState extends State<HomeScreen> {
         titleText = 'Chats';
         break;
       case 1:
-        titleText = 'Discover & Contacts';
+        titleText = 'Calls';
         break;
       case 2:
+        titleText = 'Discover & Contacts';
+        break;
+      case 3:
         titleText = 'Identity & Security';
         break;
       default:
@@ -339,7 +389,148 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  // 2. Discover & Search Tab
+  // 2. Calls Tab (WhatsApp Style Call Log History)
+  Widget _buildCallsTab() {
+    final call = context.watch<CallProvider>();
+    final logs = call.callLogs;
+
+    if (logs.isEmpty) {
+      return Center(
+        child: SingleChildScrollView(
+          padding: const EdgeInsets.all(32.0),
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Container(
+                width: 90,
+                height: 90,
+                decoration: BoxDecoration(
+                  color: AppTheme.surfaceElevated,
+                  shape: BoxShape.circle,
+                  border: Border.all(color: AppTheme.borderDark),
+                ),
+                child: const Icon(Icons.phone_missed_rounded, size: 40, color: AppTheme.primaryLight),
+              ),
+              const SizedBox(height: 24),
+              const Text(
+                'No Recent Calls',
+                style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: AppTheme.textPrimary),
+              ),
+              const SizedBox(height: 8),
+              const Text(
+                'Audio and video calls made or received on Tisaal will appear here.',
+                textAlign: TextAlign.center,
+                style: TextStyle(color: AppTheme.textSecondary, fontSize: 14),
+              ),
+            ],
+          ),
+        ),
+      );
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.symmetric(vertical: 8),
+      itemCount: logs.length,
+      itemBuilder: (context, index) {
+        final log = logs[index];
+        final isMissed = log.status == 'missed' || log.status == 'declined';
+
+        IconData dirIcon;
+        Color dirColor;
+        if (log.isCaller) {
+          dirIcon = Icons.call_made_rounded;
+          dirColor = AppTheme.primaryLight;
+        } else if (isMissed) {
+          dirIcon = Icons.call_missed_rounded;
+          dirColor = AppTheme.errorRed;
+        } else {
+          dirIcon = Icons.call_received_rounded;
+          dirColor = AppTheme.onlineGreen;
+        }
+
+        return Card(
+          margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          color: AppTheme.surface,
+          child: ListTile(
+            leading: CircleAvatar(
+              backgroundColor: AppTheme.primary.withValues(alpha: 0.2),
+              child: Text(
+                log.peerUsername.isNotEmpty ? log.peerUsername.substring(0, 1).toUpperCase() : '?',
+                style: const TextStyle(fontWeight: FontWeight.bold, color: AppTheme.primaryLight),
+              ),
+            ),
+            title: Text(
+              log.peerDisplayName.isNotEmpty ? log.peerDisplayName : '@${log.peerUsername}',
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: isMissed && !log.isCaller ? AppTheme.errorRed : AppTheme.textPrimary,
+              ),
+            ),
+            subtitle: Row(
+              children: [
+                Icon(dirIcon, size: 14, color: dirColor),
+                const SizedBox(width: 4),
+                Text(
+                  _formatTimestamp(log.createdAt),
+                  style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                ),
+                if (log.durationSeconds > 0) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '• ${log.durationSeconds}s',
+                    style: const TextStyle(color: AppTheme.textSecondary, fontSize: 12),
+                  ),
+                ] else if (isMissed) ...[
+                  const SizedBox(width: 6),
+                  Text(
+                    '• Missed',
+                    style: TextStyle(color: AppTheme.errorRed.withValues(alpha: 0.8), fontSize: 12),
+                  ),
+                ],
+              ],
+            ),
+            trailing: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.phone_rounded, color: AppTheme.onlineGreen, size: 22),
+                  onPressed: () {
+                    call.startOutgoingCall(
+                      targetAccountId: log.peerAccountId,
+                      targetUsername: log.peerUsername,
+                      callType: 'audio',
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CallScreen()),
+                    );
+                  },
+                  tooltip: 'Audio Call',
+                ),
+                IconButton(
+                  icon: const Icon(Icons.videocam_rounded, color: AppTheme.primaryLight, size: 22),
+                  onPressed: () {
+                    call.startOutgoingCall(
+                      targetAccountId: log.peerAccountId,
+                      targetUsername: log.peerUsername,
+                      callType: 'video',
+                    );
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(builder: (_) => const CallScreen()),
+                    );
+                  },
+                  tooltip: 'Video Call',
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  // 3. Discover & Search Tab
   Widget _buildDiscoveryTab() {
     final chat = context.watch<ChatProvider>();
     final pendingRequests = chat.contacts.where((c) => c.status == 'pending' && !c.isSender).toList();
@@ -349,18 +540,19 @@ class _HomeScreenState extends State<HomeScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // Search Input
+          // Search Input with real-time live typing filter
           TextField(
             controller: _searchController,
             textInputAction: TextInputAction.search,
             decoration: InputDecoration(
-              hintText: 'Search by @username or Account ID...',
+              hintText: 'Search by @username, name or ID...',
               prefixIcon: const Icon(Icons.search_rounded),
               suffixIcon: IconButton(
                 icon: const Icon(Icons.arrow_forward_rounded, color: AppTheme.primaryLight),
                 onPressed: () => chat.searchUsers(_searchController.text),
               ),
             ),
+            onChanged: (val) => chat.searchUsers(val),
             onSubmitted: (val) => chat.searchUsers(val),
           ),
           const SizedBox(height: 16),
