@@ -38,14 +38,14 @@ class ApiService {
     if (_customBaseUrl != null) return _customBaseUrl!;
     if (kIsWeb && Uri.base.host.isNotEmpty && Uri.base.host != '0.0.0.0') {
       final scheme = Uri.base.scheme.startsWith('https') ? 'https' : 'http';
-      if (Uri.base.host.contains('trycloudflare.com')) {
+      if (Uri.base.host.contains('trycloudflare.com') || Uri.base.host.contains('onrender.com')) {
         return 'https://${Uri.base.host}/api';
       }
       final portPart = (Uri.base.port == 8080) ? ':4000' : (Uri.base.port != 80 && Uri.base.port != 443 ? ':${Uri.base.port}' : '');
       return '$scheme://${Uri.base.host}$portPart/api';
     }
-    // Global Live Cloudflare Tunnel URL (accessible from anywhere in the world & mobile data):
-    return 'https://largest-unions-precisely-lone.trycloudflare.com/api';
+    // 24/7 Cloud Production Server on Render:
+    return 'https://tisaal-backend.onrender.com/api';
   }
 
   static set baseUrl(String url) {

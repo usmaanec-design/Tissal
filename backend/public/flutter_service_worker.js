@@ -22,16 +22,16 @@ const RESOURCES = {"assets/AssetManifest.bin": "693635b5258fe5f1cda720cf224f158c
 "canvaskit/skwasm.wasm": "39dd80367a4e71582d234948adc521c0",
 "favicon.png": "5dcef449791fa27946b3d35ad8803796",
 "flutter.js": "83d881c1dbb6d6bcd6b42e274605b69c",
-"flutter_bootstrap.js": "7f58a695e6ce8b0c4d8b755e5927d316",
+"flutter_bootstrap.js": "0c26a7d5bedbdb2bc62c2428af46da3a",
 "icons/Icon-192.png": "ac9a721a12bbc803b44f645561ecb1e1",
 "icons/Icon-512.png": "96e752610906ba2a93c65f8abe1645f1",
 "icons/Icon-maskable-192.png": "c457ef57daa1d16f64b27b786ec2ea3c",
 "icons/Icon-maskable-512.png": "301a7604d45b3e739efc881eb04896ea",
 "index.html": "bb61c759794447c3af411f086b28ad53",
 "/": "bb61c759794447c3af411f086b28ad53",
-"main.dart.js": "27f2c55a6237d38826800d4a58e4f2b9",
+"main.dart.js": "7fb95380b03c025f8ff412c090887f8f",
 "manifest.json": "cf1f4915e8946dff20e66c99805b794c",
-"tisaal.apk": "8e72825bde0f410d8715dcc238150e7c",
+"tisaal.apk": "9524fa2fd5cf443ac9ec6187c9a0c8df",
 "version.json": "0a70982827e9d24c0767a81e3d6352ef"};
 // The application shell files that are downloaded before a service worker can
 // start.
